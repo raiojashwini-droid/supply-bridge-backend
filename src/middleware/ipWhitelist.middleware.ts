@@ -12,6 +12,16 @@ export const checkIpWhitelist = async (req: Request, res: Response, next: NextFu
       return next();
     }
 
+    // Always bypass public webhook / callback endpoints from Shift4Shop
+    if (
+      req.path.includes('/callback') ||
+      req.path.includes('/webhook') ||
+      req.path.includes('/shift4shop') ||
+      req.path.includes('/redirect')
+    ) {
+      return next();
+    }
+
     const clientIp = (
       (req.headers['x-forwarded-for'] as string)?.split(',')[0] ||
       req.socket.remoteAddress ||

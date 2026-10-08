@@ -62,10 +62,19 @@ import integrationRoutes from './routes/integration.routes';
 import apikeyRoutes from './routes/apikey.routes';
 import securityRoutes from './routes/security.routes';
 import orderRoutes from './routes/order.routes';
+import shift4shopRoutes from './routes/shift4shop.routes';
 import { checkIpWhitelist } from './middleware/ipWhitelist.middleware';
 
 // Global IP Whitelist check for API routes
 app.use('/api', checkIpWhitelist);
+
+// Shift4Shop OAuth Callback, Redirect, and Webhook Routes (Supports all URL variations)
+app.use('/api/v1/store/shift4shop', shift4shopRoutes);
+app.use('/api/store/shift4shop', shift4shopRoutes);
+app.use('/api/stores/shift4shop', shift4shopRoutes);
+app.use('/api/v1/shift4shop', shift4shopRoutes);
+app.use('/api/shift4shop', shift4shopRoutes);
+app.use('/shift4shop', shift4shopRoutes);
 
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/products', productRoutes);
