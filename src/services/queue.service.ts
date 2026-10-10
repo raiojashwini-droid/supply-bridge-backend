@@ -9,21 +9,38 @@ const prisma = new PrismaClient();
 
 let hasLoggedRedisWarning = false;
 
-const connection = new IORedis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  maxRetriesPerRequest: null,
-  retryStrategy(times) {
-    if (times > 2) {
-      if (!hasLoggedRedisWarning) {
-        console.warn('⚠️  [Redis] Connection refused. Background queues will be disabled locally until Redis is running.');
-        hasLoggedRedisWarning = true;
-      }
-      return null; // Stop retrying after 2 attempts
-    }
-    return Math.min(times * 500, 2000);
-  },
-});
+const redisUrl = process.env.REDIS_URL || process.env.REDIS_PUBLIC_URL;
+
+const connection = redisUrl
+  ? new IORedis(redisUrl, {
+      maxRetriesPerRequest: null,
+      retryStrategy(times) {
+        if (times > 2) {
+          if (!hasLoggedRedisWarning) {
+            console.warn('⚠️  [Redis] Connection refused. Background queues will be disabled until Redis is reachable.');
+            hasLoggedRedisWarning = true;
+          }
+          return null;
+        }
+        return Math.min(times * 500, 2000);
+      },
+    })
+  : new IORedis({
+      host: process.env.REDIS_HOST || process.env.REDISHOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || process.env.REDISPORT || '6379'),
+      password: process.env.REDIS_PASSWORD || process.env.REDISPASSWORD || undefined,
+      maxRetriesPerRequest: null,
+      retryStrategy(times) {
+        if (times > 2) {
+          if (!hasLoggedRedisWarning) {
+            console.warn('⚠️  [Redis] Connection refused. Background queues will be disabled locally until Redis is running.');
+            hasLoggedRedisWarning = true;
+          }
+          return null;
+        }
+        return Math.min(times * 500, 2000);
+      },
+    });
 
 const quietError = (err: any) => {
   if (
