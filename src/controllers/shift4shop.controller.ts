@@ -151,6 +151,9 @@ export const handleShift4ShopCallback = async (req: Request, res: Response) => {
       }
     }
 
+    // Explicitly set Content-Type to application/json as required by Shift4Shop REST API module
+    res.setHeader('Content-Type', 'application/json');
+
     // Respond immediately with HTTP 200 OK as required by Shift4Shop to avoid Code 102
     return res.status(200).json({
       status: 200,
@@ -162,6 +165,8 @@ export const handleShift4ShopCallback = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[Shift4Shop Callback] Fatal Error:', error);
+    // Explicitly set Content-Type to application/json
+    res.setHeader('Content-Type', 'application/json');
     // Still return 200 with error details so Shift4Shop doesn't reject connection
     return res.status(200).json({
       status: 200,

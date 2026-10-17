@@ -63,7 +63,24 @@ import apikeyRoutes from './routes/apikey.routes';
 import securityRoutes from './routes/security.routes';
 import orderRoutes from './routes/order.routes';
 import shift4shopRoutes from './routes/shift4shop.routes';
+import { handleShift4ShopCallback } from './controllers/shift4shop.controller';
 import { checkIpWhitelist } from './middleware/ipWhitelist.middleware';
+
+// Health check / Root endpoint (handles GET, POST, OPTIONS etc.)
+app.all('/', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  return res.status(200).json({
+    status: 200,
+    success: true,
+    message: 'SupplyBridge Backend API is live and operational',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Direct Shift4Shop Callback endpoints (Supports POST/GET with application/json)
+app.all('/callback', handleShift4ShopCallback);
+app.all('/api/callback', handleShift4ShopCallback);
+app.all('/api/v1/callback', handleShift4ShopCallback);
 
 // Global IP Whitelist check for API routes
 app.use('/api', checkIpWhitelist);

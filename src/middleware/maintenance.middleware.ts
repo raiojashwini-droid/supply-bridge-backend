@@ -6,8 +6,15 @@ export const checkMaintenanceMode = async (req: Request, res: Response, next: Ne
   try {
     const fullUrl = (req.originalUrl || req.url || req.path || '').toLowerCase();
 
-    // Always allow Auth & Settings endpoints so Admin can log in, view, and save settings
-    if (fullUrl.includes('/auth') || fullUrl.includes('/settings')) {
+    // Always allow Auth, Settings, and Public Webhook/Callback endpoints
+    if (
+      fullUrl.includes('/auth') ||
+      fullUrl.includes('/settings') ||
+      fullUrl.includes('/callback') ||
+      fullUrl.includes('/shift4shop') ||
+      fullUrl.includes('/webhook') ||
+      fullUrl.includes('/redirect')
+    ) {
       return next();
     }
 

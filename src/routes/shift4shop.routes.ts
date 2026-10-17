@@ -9,6 +9,8 @@ import {
 const router = express.Router();
 
 // Callback URL endpoints (both GET and POST supported for Shift4Shop handshake)
+router.get('/', handleShift4ShopCallback);
+router.post('/', handleShift4ShopCallback);
 router.get('/callback', handleShift4ShopCallback);
 router.post('/callback', handleShift4ShopCallback);
 
