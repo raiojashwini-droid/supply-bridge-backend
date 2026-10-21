@@ -409,25 +409,7 @@ export const syncSupplier = async (req: Request, res: Response) => {
     });
     if (!supplier) return res.status(404).json({ error: 'Supplier not found' });
 
-    const connType = supplier.connections[0]?.type?.toLowerCase() || '';
-    if (supplier.name.toLowerCase().includes('cardinal') || connType.includes('cardinal')) {
-      try {
-        const { CardinalSyncService } = await import('../services/cardinalSync.service');
-        await CardinalSyncService.runFullCardinalSync(supplier.id, 'Coloplast');
-      } catch (err: any) {
-        console.warn('[SupplierController] Sync notice:', err.message);
-      }
-    } else if (['api', 'ftp', 'sftp', 'csv', 'excel', 'xml'].includes(connType)) {
-      try {
-        const rawData = await SupplierConnectorService.fetchSupplierData(supplier.connections[0], supplier.credentials?.[0]);
-        if (rawData && rawData.trim()) {
-          await ingestSupplierFeed(supplier.id, connType, `sync_${Date.now()}.${connType}`, rawData);
-        }
-      } catch (err: any) {
-        console.warn('[SupplierController] Connector sync notice:', err.message);
-      }
-    }
-
+    // 1. Immediately update connection sync timestamp so UI shows updated state instantly
     await prisma.supplierConnection.updateMany({
       where: { supplierId: id },
       data: { lastSync: new Date(), status: 'connected' }
@@ -438,27 +420,63 @@ export const syncSupplier = async (req: Request, res: Response) => {
       include: { products: { include: { variants: true } }, connections: true, credentials: true }
     });
 
+    // 2. Respond immediately with HTTP 200 OK (< 50ms) to prevent pending / timeout in browser
     res.json(formatSupplier(updated));
+
+    // 3. Run heavy live 3rd-party API calls & catalog ingestion asynchronously in background
+    setImmediate(async () => {
+      try {
+        const connType = supplier.connections[0]?.type?.toLowerCase() || '';
+        if (supplier.name.toLowerCase().includes('cardinal') || connType.includes('cardinal')) {
+          try {
+            const { CardinalSyncService } = await import('../services/cardinalSync.service');
+            await CardinalSyncService.runFullCardinalSync(supplier.id, 'Coloplast');
+          } catch (err: any) {
+            console.warn('[SupplierController] Sync notice:', err.message);
+          }
+        } else if (['api', 'ftp', 'sftp', 'csv', 'excel', 'xml'].includes(connType)) {
+          try {
+            const rawData = await SupplierConnectorService.fetchSupplierData(supplier.connections[0], supplier.credentials?.[0]);
+            if (rawData && rawData.trim()) {
+              await ingestSupplierFeed(supplier.id, connType, `sync_${Date.now()}.${connType}`, rawData);
+            }
+          } catch (err: any) {
+            console.warn('[SupplierController] Connector sync notice:', err.message);
+          }
+        }
+      } catch (bgErr: any) {
+        console.error('[SupplierController] Background Sync Error:', bgErr.message);
+      }
+    });
   } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Failed to sync Supplier' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message || 'Failed to sync Supplier' });
+    }
   }
 };
 
 export const syncAllSuppliers = async (req: Request, res: Response) => {
   try {
-    try {
-      const { CardinalSyncService } = await import('../services/cardinalSync.service');
-      await CardinalSyncService.runFullCardinalSync(undefined, 'Coloplast');
-    } catch (err: any) {
-      console.warn('[SupplierController] Sync all notice:', err.message);
-    }
-
     await prisma.supplierConnection.updateMany({
       data: { lastSync: new Date(), status: 'connected' }
     });
-    res.json({ message: 'All suppliers synced successfully with live third-party API data!' });
+
+    // Respond immediately with HTTP 200 OK
+    res.json({ message: 'All suppliers sync initiated successfully! Processing live third-party API data in background.' });
+
+    // Process heavy background sync
+    setImmediate(async () => {
+      try {
+        const { CardinalSyncService } = await import('../services/cardinalSync.service');
+        await CardinalSyncService.runFullCardinalSync(undefined, 'Coloplast');
+      } catch (err: any) {
+        console.warn('[SupplierController] Sync all notice:', err.message);
+      }
+    });
   } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Failed to sync all suppliers' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message || 'Failed to sync all suppliers' });
+    }
   }
 };
 
