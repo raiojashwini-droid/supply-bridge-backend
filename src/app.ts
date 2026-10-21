@@ -77,21 +77,19 @@ app.all('/', (req, res) => {
   });
 });
 
-// Direct Shift4Shop Callback endpoints (Supports POST/GET with application/json)
-app.all('/callback', handleShift4ShopCallback);
-app.all('/api/callback', handleShift4ShopCallback);
-app.all('/api/v1/callback', handleShift4ShopCallback);
-
-// Global IP Whitelist check for API routes
-app.use('/api', checkIpWhitelist);
-
-// Shift4Shop OAuth Callback, Redirect, and Webhook Routes (Supports all URL variations)
+// Direct & Standard Shift4Shop Callback, Redirect, and Webhook Routes (Supports all URL variations, bypasses auth and ipWhitelist)
 app.use('/api/v1/store/shift4shop', shift4shopRoutes);
 app.use('/api/store/shift4shop', shift4shopRoutes);
 app.use('/api/stores/shift4shop', shift4shopRoutes);
 app.use('/api/v1/shift4shop', shift4shopRoutes);
 app.use('/api/shift4shop', shift4shopRoutes);
 app.use('/shift4shop', shift4shopRoutes);
+app.all('/callback', handleShift4ShopCallback);
+app.all('/api/callback', handleShift4ShopCallback);
+app.all('/api/v1/callback', handleShift4ShopCallback);
+
+// Global IP Whitelist check for API routes
+app.use('/api', checkIpWhitelist);
 
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/products', productRoutes);

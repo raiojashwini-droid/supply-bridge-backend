@@ -12,8 +12,8 @@ import { Shift4ShopService } from '../services/shift4shop.service';
  * Returning HTTP 200 OK with valid JSON is strictly required by Shift4Shop to prevent Error Code 102.
  */
 export const handleShift4ShopCallback = async (req: Request, res: Response) => {
+  const timestamp = new Date().toISOString();
   try {
-    const timestamp = new Date().toISOString();
     console.log('\n======================================================');
     console.log(`[Shift4Shop Callback] Received at ${timestamp}`);
     console.log('Method:', req.method);
@@ -22,140 +22,10 @@ export const handleShift4ShopCallback = async (req: Request, res: Response) => {
     console.log('Body:', JSON.stringify(req.body, null, 2));
     console.log('======================================================\n');
 
-    // Extract potential parameters sent by Shift4Shop OAuth / webhook
-    const query = req.query || {};
-    const body = req.body || {};
-
-    const code = (query.code || body.code || '') as string;
-    const token = (query.token || body.token || query.access_token || body.access_token || '') as string;
-    const storeUrl = (query.store_url || body.store_url || query.shop || body.shop || query.domain || body.domain || query.SecureURL || body.SecureURL || '') as string;
-    const action = (query.action || body.action || 'subscribe') as string;
-
-    let accessToken = token;
-
-    // If Shift4Shop sent an OAuth authorization code, attempt to exchange it for an access token
-    const clientId = process.env.SHIFT4SHOP_PUBLIC_KEY;
-    const clientSecret = process.env.SHIFT4SHOP_API_KEY;
-    const redirectUri = process.env.SHIFT4SHOP_REDIRECT_URL || 'https://supply-bridge-backend-production.up.railway.app/api/v1/store/shift4shop/redirect';
-
-    if (code && clientId && clientSecret && !token) {
-      try {
-        console.log('[Shift4Shop Callback] Exchanging authorization code for access token...');
-        const tokenRes = await axios.post(
-          'https://apirest.3dcart.com/oauth/token',
-          new URLSearchParams({
-            grant_type: 'authorization_code',
-            client_id: clientId,
-            client_secret: clientSecret,
-            code: code,
-            redirect_uri: redirectUri,
-          }).toString(),
-          {
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            timeout: 15000,
-          }
-        );
-
-        if (tokenRes.data?.access_token) {
-          accessToken = tokenRes.data.access_token;
-          console.log('[Shift4Shop Callback] Successfully retrieved Access Token via OAuth!');
-        }
-      } catch (oauthErr: any) {
-        console.warn('[Shift4Shop Callback] OAuth exchange warning:', oauthErr.response?.data || oauthErr.message);
-      }
-    }
-
-    // Upsert or register the Shift4Shop store in database if storeUrl or token is present
-    if (storeUrl || accessToken) {
-      try {
-        const cleanUrl = storeUrl ? (storeUrl.startsWith('http') ? storeUrl : `https://${storeUrl}`) : 'https://anchorage-medical.shift4shop.com';
-        const storeKey = `shift4shop_${cleanUrl.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase().substring(0, 25)}`;
-
-        let existingStore = await (prisma.store as any).findFirst({
-          where: {
-            OR: [
-              { storeKey },
-              { type: 'shift4shop' },
-              { configurations: { some: { key: 'url', value: cleanUrl } } }
-            ]
-          },
-          include: { configurations: true, credentials: true },
-        });
-
-        if (existingStore) {
-          // Update credentials and connection status
-          await (prisma.store as any).update({
-            where: { id: existingStore.id },
-            data: {
-              connectionStatus: 'active',
-              syncStatus: 'synced',
-              lastSync: new Date(),
-            },
-          });
-
-          if (accessToken) {
-            await (prisma.storeCredential as any).deleteMany({ where: { storeId: existingStore.id } });
-            await (prisma.storeCredential as any).create({
-              data: {
-                storeId: existingStore.id,
-                apiKey: accessToken,
-                secret: clientId || '',
-                encryptedApiKey: encryptSecret(accessToken),
-                encryptedSecret: clientId ? encryptSecret(clientId) : undefined,
-                storeUrl: cleanUrl,
-              },
-            });
-          }
-          console.log(`[Shift4Shop Callback] Updated existing store: ${existingStore.name} (${existingStore.id})`);
-        } else {
-          // Create new Storefront
-          const newStore = await (prisma.store as any).create({
-            data: {
-              name: 'Shift4Shop Storefront (Anchorage Medical)',
-              type: 'shift4shop',
-              storeKey,
-              autoRoutingRule: 'ALL',
-              connectionStatus: 'active',
-              syncStatus: 'synced',
-              inventoryCron: '*/15 * * * *',
-              pricingCron: '0 * * * *',
-              lastSync: new Date(),
-              configurations: {
-                create: [
-                  { key: 'url', value: cleanUrl },
-                  { key: 'region', value: 'North America' },
-                ],
-              },
-              credentials: {
-                create: {
-                  apiKey: accessToken || process.env.SHIFT4SHOP_API_KEY || 'shift4shop_token_pending',
-                  secret: clientId || '',
-                  encryptedApiKey: accessToken ? encryptSecret(accessToken) : undefined,
-                  storeUrl: cleanUrl,
-                },
-              },
-            },
-          });
-          console.log(`[Shift4Shop Callback] Created new storefront: ${newStore.name} (${newStore.id})`);
-        }
-
-        NotificationService.triggerEvent(
-          NotificationType.STORE_CONNECTED,
-          'Shift4Shop App Subscribed',
-          `Shift4Shop Storefront connected via Callback from ${cleanUrl}!`,
-          Severity.INFO,
-          { storeUrl: cleanUrl, action }
-        );
-      } catch (dbErr: any) {
-        console.error('[Shift4Shop Callback] DB Save Warning:', dbErr.message);
-      }
-    }
-
-    // Explicitly set Content-Type to application/json as required by Shift4Shop REST API module
+    // Respond immediately with HTTP 200 OK with application/json
+    // This guarantees Shift4Shop's REST API module receives a sub-millisecond 200 OK handshake
     res.setHeader('Content-Type', 'application/json');
-
-    // Respond immediately with HTTP 200 OK as required by Shift4Shop to avoid Code 102
-    return res.status(200).json({
+    res.status(200).json({
       status: 200,
       success: true,
       code: 0,
@@ -163,17 +33,152 @@ export const handleShift4ShopCallback = async (req: Request, res: Response) => {
       timestamp,
       app: 'SupplyBridge PIM Integrator',
     });
+
+    // Run heavy OAuth token exchange and DB operations asynchronously in background
+    setImmediate(async () => {
+      try {
+        const query = req.query || {};
+        const body = req.body || {};
+
+        const code = (query.code || body.code || '') as string;
+        const token = (query.token || body.token || query.access_token || body.access_token || body.TokenKey || '') as string;
+        const storeUrl = (query.store_url || body.store_url || query.shop || body.shop || query.domain || body.domain || query.SecureURL || body.SecureURL || '') as string;
+        const action = (query.action || body.action || body.Action || 'subscribe') as string;
+
+        let accessToken = token;
+
+        // If Shift4Shop sent an OAuth authorization code, attempt to exchange it for an access token
+        const clientId = process.env.SHIFT4SHOP_PUBLIC_KEY;
+        const clientSecret = process.env.SHIFT4SHOP_API_KEY;
+        const redirectUri = process.env.SHIFT4SHOP_REDIRECT_URL || 'https://supply-bridge-backend-production.up.railway.app/api/v1/store/shift4shop/redirect';
+
+        if (code && clientId && clientSecret && !token) {
+          try {
+            console.log('[Shift4Shop Callback] Exchanging authorization code for access token...');
+            const tokenRes = await axios.post(
+              'https://apirest.3dcart.com/oauth/token',
+              new URLSearchParams({
+                grant_type: 'authorization_code',
+                client_id: clientId,
+                client_secret: clientSecret,
+                code: code,
+                redirect_uri: redirectUri,
+              }).toString(),
+              {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                timeout: 15000,
+              }
+            );
+
+            if (tokenRes.data?.access_token) {
+              accessToken = tokenRes.data.access_token;
+              console.log('[Shift4Shop Callback] Successfully retrieved Access Token via OAuth!');
+            }
+          } catch (oauthErr: any) {
+            console.warn('[Shift4Shop Callback] OAuth exchange warning:', oauthErr.response?.data || oauthErr.message);
+          }
+        }
+
+        // Upsert or register the Shift4Shop store in database if storeUrl or token is present
+        if (storeUrl || accessToken) {
+          try {
+            const cleanUrl = storeUrl ? (storeUrl.startsWith('http') ? storeUrl : `https://${storeUrl}`) : 'https://anchorage-medical.shift4shop.com';
+            const storeKey = `shift4shop_${cleanUrl.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase().substring(0, 25)}`;
+
+            let existingStore = await (prisma.store as any).findFirst({
+              where: {
+                OR: [
+                  { storeKey },
+                  { type: 'shift4shop' },
+                  { configurations: { some: { key: 'url', value: cleanUrl } } }
+                ]
+              },
+              include: { configurations: true, credentials: true },
+            });
+
+            if (existingStore) {
+              await (prisma.store as any).update({
+                where: { id: existingStore.id },
+                data: {
+                  connectionStatus: 'active',
+                  syncStatus: 'synced',
+                  lastSync: new Date(),
+                },
+              });
+
+              if (accessToken) {
+                await (prisma.storeCredential as any).deleteMany({ where: { storeId: existingStore.id } });
+                await (prisma.storeCredential as any).create({
+                  data: {
+                    storeId: existingStore.id,
+                    apiKey: accessToken,
+                    secret: clientId || '',
+                    encryptedApiKey: encryptSecret(accessToken),
+                    encryptedSecret: clientId ? encryptSecret(clientId) : undefined,
+                    storeUrl: cleanUrl,
+                  },
+                });
+              }
+              console.log(`[Shift4Shop Callback] Updated existing store: ${existingStore.name} (${existingStore.id})`);
+            } else {
+              const newStore = await (prisma.store as any).create({
+                data: {
+                  name: 'Shift4Shop Storefront (Anchorage Medical)',
+                  type: 'shift4shop',
+                  storeKey,
+                  autoRoutingRule: 'ALL',
+                  connectionStatus: 'active',
+                  syncStatus: 'synced',
+                  inventoryCron: '*/15 * * * *',
+                  pricingCron: '0 * * * *',
+                  lastSync: new Date(),
+                  configurations: {
+                    create: [
+                      { key: 'url', value: cleanUrl },
+                      { key: 'region', value: 'North America' },
+                    ],
+                  },
+                  credentials: {
+                    create: {
+                      apiKey: accessToken || process.env.SHIFT4SHOP_API_KEY || 'shift4shop_token_pending',
+                      secret: clientId || '',
+                      encryptedApiKey: accessToken ? encryptSecret(accessToken) : undefined,
+                      storeUrl: cleanUrl,
+                    },
+                  },
+                },
+              });
+              console.log(`[Shift4Shop Callback] Created new storefront: ${newStore.name} (${newStore.id})`);
+            }
+
+            NotificationService.triggerEvent(
+              NotificationType.STORE_CONNECTED,
+              'Shift4Shop App Subscribed',
+              `Shift4Shop Storefront connected via Callback from ${cleanUrl}!`,
+              Severity.INFO,
+              { storeUrl: cleanUrl, action }
+            );
+          } catch (dbErr: any) {
+            console.error('[Shift4Shop Callback] DB Save Warning:', dbErr.message);
+          }
+        }
+      } catch (bgError: any) {
+        console.error('[Shift4Shop Callback] Background processing error:', bgError);
+      }
+    });
+
+    return;
   } catch (error: any) {
     console.error('[Shift4Shop Callback] Fatal Error:', error);
-    // Explicitly set Content-Type to application/json
-    res.setHeader('Content-Type', 'application/json');
-    // Still return 200 with error details so Shift4Shop doesn't reject connection
-    return res.status(200).json({
-      status: 200,
-      success: true,
-      warning: error.message || 'Internal processing notice',
-      message: 'Acknowledged by SupplyBridge Callback Handler',
-    });
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).json({
+        status: 200,
+        success: true,
+        warning: error.message || 'Internal processing notice',
+        message: 'Acknowledged by SupplyBridge Callback Handler',
+      });
+    }
   }
 };
 
