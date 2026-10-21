@@ -18,8 +18,59 @@ import { checkMaintenanceMode } from './middleware/maintenance.middleware';
 // Security and utility middlewares
 app.use(helmet({
   crossOriginResourcePolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: false,
+  frameguard: false, // Allows iframe embedding (e.g. Shift4Shop app iframe)
 }));
-app.use(cors({ origin: true, credentials: true }));
+
+// Universal CORS Configuration (Supports localhost, Railway, Vercel, Shift4Shop iframes, mobile & API clients)
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Dynamically allows any requesting origin (including undefined for Postman / curl)
+    callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+    'x-user-role',
+    'x-api-key',
+    'Cache-Control',
+    'Pragma',
+  ],
+  exposedHeaders: ['Content-Range', 'X-Content-Range', 'Authorization', 'Set-Cookie'],
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// Explicit Cross-Origin Fallback & Preflight Middleware (Guarantee zero CORS blockage)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-user-role, x-api-key, Cache-Control, Pragma'
+  );
+
+  // Instant response for OPTIONS preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
